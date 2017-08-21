@@ -32,10 +32,10 @@
             </goals>
             <configuration>
               <artifactSet>
-                <excludes>
+               <!-- <excludes>
                   <exclude>com.amazonaws:aws-lambda-java-events</exclude>
                   <exclude>com.amazonaws:aws-lambda-java-core</exclude>
-                </excludes>
+                </excludes> -->
               </artifactSet>
             </configuration>
           </execution>
