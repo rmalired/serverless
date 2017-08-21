@@ -146,8 +146,8 @@ public class LambdaFunctionHandler implements RequestHandler<SNSEvent, String> {
     		                    		   .with("#na6", "SMA_200")
     		                    		   .with("#na7", "EMA_9")
     		                    		   .with("#na8", "EMA_26")
-    		                    		   .with("na9", "RSI_2")
-    		                    		   .with("na10", "RSI_14")
+    		                    		   .with("#na9", "RSI_2")
+    		                    		   .with("#na10", "RSI_14")
     		                    		   .with("#na11", "SLOPE_20"))
     		                       .withValueMap(new ValueMap()
     		                    		   .with(":val1", fiveDayval)
@@ -158,9 +158,9 @@ public class LambdaFunctionHandler implements RequestHandler<SNSEvent, String> {
     		                    		   .with(":val6", twohunDayval)
     		                    		   .with(":val7", nineDayval)
     		                    		   .with(":val8", twentysixDayVal)
-    		                    		   .with("val9", twoPeriodRSI)
-    		                    		   .with("val10", fourteenPeriodRSI)
-    		                    		   .with("val11", slope));
+    		                    		   .with(":val9", twoPeriodRSI)
+    		                    		   .with(":val10", fourteenPeriodRSI)
+    		                    		   .with(":val11", slope));
        
        UpdateItemOutcome outcome = table.updateItem(updateItem);
        
