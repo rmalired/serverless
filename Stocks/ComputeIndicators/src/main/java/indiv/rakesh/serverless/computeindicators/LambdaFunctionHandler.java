@@ -24,17 +24,24 @@ import com.amazonaws.services.dynamodbv2.document.utils.NameMap;
 import com.amazonaws.services.dynamodbv2.document.utils.ValueMap;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
-
 import com.amazonaws.services.lambda.runtime.events.SNSEvent;
 
+import eu.verdelhan.ta4j.Decimal;
+import eu.verdelhan.ta4j.Rule;
+import eu.verdelhan.ta4j.Strategy;
 import eu.verdelhan.ta4j.Tick;
 import eu.verdelhan.ta4j.TimeSeries;
+import eu.verdelhan.ta4j.TradingRecord;
+import eu.verdelhan.ta4j.indicators.oscillators.StochasticOscillatorKIndicator;
 import eu.verdelhan.ta4j.indicators.simple.ClosePriceIndicator;
-import eu.verdelhan.ta4j.indicators.statistics.SimpleLinearRegressionIndicator;
 import eu.verdelhan.ta4j.indicators.trackers.EMAIndicator;
 import eu.verdelhan.ta4j.indicators.trackers.MACDIndicator;
 import eu.verdelhan.ta4j.indicators.trackers.SMAIndicator;
 import eu.verdelhan.ta4j.indicators.trackers.SmoothedRSIIndicator;
+import eu.verdelhan.ta4j.trading.rules.CrossedDownIndicatorRule;
+import eu.verdelhan.ta4j.trading.rules.CrossedUpIndicatorRule;
+import eu.verdelhan.ta4j.trading.rules.OverIndicatorRule;
+import eu.verdelhan.ta4j.trading.rules.UnderIndicatorRule;
 
 public class LambdaFunctionHandler implements RequestHandler<SNSEvent, String> {
 
@@ -90,7 +97,7 @@ public class LambdaFunctionHandler implements RequestHandler<SNSEvent, String> {
           
        }
         // create series
-       TimeSeries series = new TimeSeries("AAPL", ticks);
+       TimeSeries series = new TimeSeries(message, ticks);
        ClosePriceIndicator closePrice = new ClosePriceIndicator(series);
        int noOfTicks = closePrice.getTimeSeries().getTickCount();
        
@@ -114,8 +121,8 @@ public class LambdaFunctionHandler implements RequestHandler<SNSEvent, String> {
        EMAIndicator ninedayEMA = new EMAIndicator(closePrice, 9);
        EMAIndicator twentysixdayEMA = new EMAIndicator(closePrice, 26);
        
-       double nineDayval = ninedayEMA.getValue(noOfTicks-1).toDouble();
-       double twentysixDayVal = twentysixdayEMA.getValue(noOfTicks-1).toDouble();
+       double nineDayval = ninedayEMA.getValue(series.getEnd()).toDouble();
+       double twentysixDayVal = twentysixdayEMA.getValue(series.getEnd()).toDouble();
        
        
        //RSI for 2-day and 14-day period
@@ -126,18 +133,32 @@ public class LambdaFunctionHandler implements RequestHandler<SNSEvent, String> {
        
        
        //MACD indicator
-       MACDIndicator macd = new MACDIndicator(closePrice, 12, 26);
+       MACDIndicator macd = new MACDIndicator(closePrice, 9, 26);
        double _macd =  macd.getValue(series.getEnd()).toDouble();
+       EMAIndicator emaMacd = new EMAIndicator(macd,18);
        
-       //Slope(Linear Regression)
-       SimpleLinearRegressionIndicator slri = new SimpleLinearRegressionIndicator(closePrice, 20);
-       double slope = slri.getValue(series.getEnd()).toDouble();
+       //Slow stochastic
+       StochasticOscillatorKIndicator stochasticOscillKInd = new StochasticOscillatorKIndicator(series, 14);
        
+       // Moving momentum
+       
+       Rule entrySMARule = new OverIndicatorRule(fiftyDaySMA,twohunDaySMA)  //Trend
+    		            .and(new CrossedDownIndicatorRule(stochasticOscillKInd, Decimal.valueOf(20))
+    		            .and(new OverIndicatorRule(macd, emaMacd)));
+       
+       
+       Rule exitSMARule = new UnderIndicatorRule(fiftyDaySMA, twohunDaySMA)
+    		            .and(new CrossedUpIndicatorRule(stochasticOscillKInd, Decimal.valueOf(80))
+    		            .and(new UnderIndicatorRule(macd, emaMacd)));
+       
+       Strategy movingStrategy = new Strategy(entrySMARule,exitSMARule);
+       
+       TradingRecord tradingRecord = series.run(movingStrategy);
        
        
        UpdateItemSpec updateItem = new UpdateItemSpec()
     		                       .withPrimaryKey("Tick", message, "cdate", todayZdt.toEpochSecond())
-    		                       .withUpdateExpression("add #na1 :val1, #na2 :val2,  #na3 :val3, #na4 :val4, #na5 :val5, #na6 :val6, #na7 :val7, #na8 :val8, #na9 :val9, #na10 :val10, #na11 :val11")
+    		                       .withUpdateExpression("add #na1 :val1, #na2 :val2,  #na3 :val3, #na4 :val4, #na5 :val5, #na6 :val6, #na7 :val7, #na8 :val8, #na9 :val9, #na10 :val10")
     		                       .withNameMap(new NameMap().with("#na1", "SMA_5")
     		                    		   .with("#na2", "SMA_20")
     		                    		   .with("#na3", "SMA_30")
@@ -147,8 +168,7 @@ public class LambdaFunctionHandler implements RequestHandler<SNSEvent, String> {
     		                    		   .with("#na7", "EMA_9")
     		                    		   .with("#na8", "EMA_26")
     		                    		   .with("#na9", "RSI_2")
-    		                    		   .with("#na10", "RSI_14")
-    		                    		   .with("#na11", "SLOPE_20"))
+    		                    		   .with("#na10", "RSI_14"))
     		                       .withValueMap(new ValueMap()
     		                    		   .with(":val1", fiveDayval)
     		                    		   .with(":val2", twentyDayval)
@@ -159,8 +179,7 @@ public class LambdaFunctionHandler implements RequestHandler<SNSEvent, String> {
     		                    		   .with(":val7", nineDayval)
     		                    		   .with(":val8", twentysixDayVal)
     		                    		   .with(":val9", twoPeriodRSI)
-    		                    		   .with(":val10", fourteenPeriodRSI)
-    		                    		   .with(":val11", slope));
+    		                    		   .with(":val10", fourteenPeriodRSI));
        
        UpdateItemOutcome outcome = table.updateItem(updateItem);
        
